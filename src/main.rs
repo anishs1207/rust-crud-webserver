@@ -1,3 +1,5 @@
+mod middlewares;
+use crate::middlewares::logger::log_requests;
 use axum::{
     Router,
     extract::{Json, Path, State},
@@ -205,6 +207,8 @@ async fn main() {
                 .patch(update_book_by_id)
                 .delete(delete_book_by_id),
         )
+        .layer(axum::middleware::from_fn(log_requests))
+        //@test working of this
         .with_state(pool);
 
     println!("Server running on http://localhost:3000");
