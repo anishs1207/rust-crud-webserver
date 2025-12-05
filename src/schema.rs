@@ -2,7 +2,7 @@
 
 diesel::table! {
     books (id) {
-        id -> Int4,
+        id -> Uuid,
         book_name -> Varchar,
         author -> Varchar,
     }
