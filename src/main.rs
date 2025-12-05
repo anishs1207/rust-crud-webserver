@@ -1,12 +1,10 @@
 use axum::{
     Router,
     extract::{Json, Path, State},
+    http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, patch, post},
+    routing::get,
 };
-use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
-
 use diesel::prelude::*;
 use dotenv::dotenv;
 use std::env;
@@ -14,37 +12,22 @@ use std::env;
 pub mod models;
 pub mod schema;
 
-//     use diesel::prelude::*;
-// use dotenvy::dotenv;
-// use std::env;
-
-
-
 use tokio::task;
 
-use diesel::prelude::*;
 use diesel::pg::PgConnection;
-use r2d2::{Pool};
 use diesel::r2d2::ConnectionManager;
+use r2d2::Pool;
 
-pub type DbPool = Pool<ConnectionManager<PgConnection>>;
-
+use crate::models::Book;
 use crate::schema::books::dsl::*;
 
-
-use tokio::task;
-use diesel::prelude::*;
+// Type alias for the DB pool
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 
 // GET /books - gets all the books
-async fn get_all_books(
-    State(pool): State<DbPool>
-) -> Json<Vec<Book>> {
-
-    // Run Diesel (blocking) inside a spawned blocking thread
-    let books = task::spawn_blocking(move || {
+async fn get_all_books(State(pool): State<DbPool>) -> impl IntoResponse {
+    let result = task::spawn_blocking(move || {
         let mut conn = pool.get().expect("Failed to get DB connection");
-
-        use crate::schema::books::dsl::*;
 
         books
             .select(Book::as_select())
@@ -54,9 +37,34 @@ async fn get_all_books(
     .await
     .unwrap();
 
-    Json(books)
+    (StatusCode::OK, Json(result))
 }
 
+// GET /books/{id}
+async fn get_book_by_id(State(pool): State<DbPool>, Path(book_id): Path<i32>) -> impl IntoResponse {
+    // Spawn a blocking task for Diesel DB access
+    let result = task::spawn_blocking(move || {
+        let mut conn = pool.get().expect("Failed to get DB connection");
+
+        books
+            .filter(id.eq(book_id))
+            .select(Book::as_select())
+            .first::<Book>(&mut conn)
+            .optional() // returns Ok(Some(book)) or Ok(None) instead of error if not found
+    })
+    .await
+    .unwrap(); // unwrap JoinHandle
+
+    match result {
+        Ok(Some(book)) => Json(book).into_response(),
+        Ok(None) => (axum::http::StatusCode::NOT_FOUND, "Book not found").into_response(),
+        Err(err) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", err),
+        )
+            .into_response(),
+    }
+}
 
 // GET /books/{id}
 // async fn get_book_by_id(State(db): State<Db>, Path(id): Path<u32>) -> impl IntoResponse {
@@ -121,14 +129,6 @@ async fn get_all_books(
 //     "Deleted"
 // }
 
-pub fn establish_connection() -> PgConnection {
-    dotenv().ok();
-
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    
-   
-}
-
 // main entry point for the function:
 #[tokio::main]
 async fn main() {
@@ -145,26 +145,21 @@ async fn main() {
 
     let manager = ConnectionManager::<PgConnection>::new(database_url);
     let pool = Pool::builder()
-    .build(manager)
-    .expect("Failed to created Pool")
+        .build(manager)
+        .expect("Failed to created Pool");
 
-
- 
-    PgConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
-
+    // defined the router for the routing
     let app = Router::new()
         .route("/", get(|| async { "Works" }))
-        .route("/books", get(get_all_books).post(add_book))
+        .route("/books", get(get_all_books))
         .route(
-            "/books/{id}", // <-- FIXED FOR AXUM 0.7
-            get(get_book_by_id)
-                .patch(update_book_by_id)
-                .delete(delete_book_by_id),
+            "/books/{id}",
+            get(get_book_by_id), // .patch(update_book_by_id)
+                                 // .delete(delete_book_by_id),
         )
-        .with_state(db);
+        .with_state(pool);
 
-    println!("Server running on http://127.0.0.1:3000");
+    println!("Server running on http://localhost:3000");
 
     axum::serve(
         tokio::net::TcpListener::bind("127.0.0.1:3000")

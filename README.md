@@ -3,3 +3,8 @@
 - https://docs.rs/axum/latest/axum/
 - refer this palylsit for learning rust more in depth here:
   https://www.youtube.com/playlist?list=PLDbRgZ0OOEpUkWDGqp91ODn0dk7LPBAUL
+
+anish@LAPTOP-Q65T0SCJ:/mnt/c/Users/Anish/Documents/Anish-Coding/coding_notes/building/31-rust-backend/rust-backend$ diesel migration run
+Running migration 2025-12-05-112232-0000_create_books
+
+diesel generate <nme of  mgruiatrion>
