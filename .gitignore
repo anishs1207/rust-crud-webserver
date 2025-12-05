@@ -1,0 +1,63 @@
+# ===========================
+# Rust & Cargo
+# ===========================
+/debug/
+/release/
+/Cargo.lock
+/.rustc_info.json
+
+# Build artifacts
+**/*.rs.bk
+
+/tests/node_modules
+/target/
+
+# ===========================
+# Diesel
+# ===========================
+/diesel.toml.bk
+/.diesel_lock
+
+# Ignore generated schema if needed
+# src/schema.rs
+
+# ===========================
+# Environment files
+# ===========================
+.env
+.env.*
+!.env.sample
+
+# ===========================
+# VS Code / IDE
+# ===========================
+.vscode/
+*.code-workspace
+
+# IntelliJ / CLion
+.idea/
+
+# ===========================
+# Logs & Temp files
+# ===========================
+*.log
+*.tmp
+*.swp
+*.swo
+
+# ===========================
+# OS files
+# ===========================
+.DS_Store
+Thumbs.db
+
+# ===========================
+# Docker
+# ===========================
+/docker/
+*.dockerfile
+
+# ===========================
+# Node (if used anywhere)
+# ===========================
+node_modules/_
