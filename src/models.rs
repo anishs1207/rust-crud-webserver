@@ -17,3 +17,9 @@ pub struct NewBook {
     pub book_name: String,
     pub author: String,
 }
+#[derive(AsChangeset, Deserialize)]
+#[diesel(table_name = crate::schema::books)]
+pub struct UpdateBook {
+    pub book_name: Option<String>,
+    pub author: Option<String>,
+}

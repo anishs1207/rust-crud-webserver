@@ -8,3 +8,5 @@ anish@LAPTOP-Q65T0SCJ:/mnt/c/Users/Anish/Documents/Anish-Coding/coding_notes/bui
 Running migration 2025-12-05-112232-0000_create_books
 
 diesel generate <nme of  mgruiatrion>
+
+- add authentication & use of middleware forit

@@ -20,7 +20,7 @@ use diesel::pg::PgConnection;
 use diesel::r2d2::ConnectionManager;
 use r2d2::Pool;
 
-use crate::models::{Book, NewBook};
+use crate::models::{Book, NewBook, UpdateBook};
 use crate::schema::books::dsl::*;
 
 // Type alias for the DB pool
@@ -95,13 +95,86 @@ async fn add_book(State(pool): State<DbPool>, Json(payload): Json<NewBook>) -> i
 }
 
 // PATCH /books/{id}
+#[axum::debug_handler]
+async fn update_book_by_id(
+    State(pool): State<DbPool>,
+    Path(book_id): Path<Uuid>,
+    Json(payload): Json<UpdateBook>,
+) -> Result<Json<Book>, (StatusCode, String)> {
+    // Run DB operation in blocking thread
+    let result = task::spawn_blocking(move || {
+        let mut conn = pool.get().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "DB pool error".to_string(),
+            )
+        })?;
 
-// // DELETE /books/{id}
-// async fn delete_book_by_id(State(db): State<Db>, Path(id): Path<u32>) -> impl IntoResponse {
-//     let mut books = db.lock().unwrap();
-//     books.retain(|b| b.id != id);
-//     "Deleted"
-// }
+        diesel::update(books.filter(id.eq(book_id)))
+            .set(&payload)
+            .get_result::<Book>(&mut conn)
+            .optional()
+            .map_err(|err| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("DB error: {}", err),
+                )
+            })
+    })
+    .await
+    .map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Join error: {}", err),
+        )
+    })?; // <- unwrap outer Result
+
+    // Now `result` is Option<Book>, safe to match
+    match result {
+        Ok(Some(book)) => Ok(Json(book)),
+        Ok(None) => Err((StatusCode::NOT_FOUND, "Book not found".into())),
+        Err(e) => Err(e),
+    }
+}
+
+// DELETE /books/{id}
+// DELETE /books/{id}
+#[axum::debug_handler]
+async fn delete_book_by_id(
+    State(pool): State<DbPool>,
+    Path(book_id): Path<Uuid>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let result = task::spawn_blocking(move || {
+        let mut conn = pool.get().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "DB pool error".to_string(),
+            )
+        })?;
+
+        diesel::delete(books.filter(id.eq(book_id)))
+            .execute(&mut conn)
+            .map_err(|err| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("DB error: {}", err),
+                )
+            })
+    })
+    .await
+    .map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Join error: {}", err),
+        )
+    })?;
+
+    match result {
+        Ok(count) if count > 0 => Ok(StatusCode::NO_CONTENT),
+        Ok(_) => Err((StatusCode::NOT_FOUND, "Book not found".into())),
+        Err(e) => Err(e),
+    }
+}
 
 // main entry point for the function:
 #[tokio::main]
@@ -128,8 +201,9 @@ async fn main() {
         .route("/books", get(get_all_books).post(add_book))
         .route(
             "/books/{id}",
-            get(get_book_by_id), // .patch(update_book_by_id)
-                                 // .delete(delete_book_by_id),
+            get(get_book_by_id)
+                .patch(update_book_by_id)
+                .delete(delete_book_by_id),
         )
         .with_state(pool);
 
