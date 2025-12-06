@@ -14,3 +14,14 @@ diesel generate <nme of  mgruiatrion>
 - resume auth & adding users here
 - add ACCESS_TOKEN, REFRESH_TOKEN and jwt (cookie managembt in frontend for it here)
 - happens after register here (when user is logging in then sva ethe tokens here)
+
+{
+"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzNDYzYzM0OS1jOTI0LTRhZGQtOTFjZi0zM2MyODUzOGQ1MzgiLCJleHAiOjE3NjUxMDY1NzUsInVzZXJuYW1lIjoic3RldmVuIn0.Yzv3F48Mvy9Y9YlAK-LxQLKt2JECTR9jmrBi5LrUtF4",
+"user": {
+"created_at": "2025-12-06T11:22:54.865073",
+"email": "steven@example.com",
+"id": "3463c349-c924-4add-91cf-33c28538d538",
+"password": "$argon2id$v=19$m=19456,t=2,p=1$ixBXHobOqPSYpmiHkypS4A$ptrjJ8q8imcTVqV0hzEBDf/ZrUR6CagwMvKI4svzvX4",
+"username": "steven"
+}
+}

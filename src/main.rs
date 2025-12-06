@@ -21,6 +21,10 @@ use argon2::{Argon2, PasswordHasher};
 
 use tokio::task;
 
+use crate::models::Claims;
+use chrono::{Duration, Utc};
+use jsonwebtoken::{EncodingKey, Header, encode};
+
 use diesel::pg::PgConnection;
 use diesel::r2d2::ConnectionManager;
 use r2d2::Pool;
@@ -216,9 +220,9 @@ pub async fn register(
     };
 
     let result = task::spawn_blocking(move || {
-    let mut conn = pool.get().unwrap();
+        let mut conn = pool.get().unwrap();
 
-    diesel::insert_into(crate::schema::users::dsl::users)
+        diesel::insert_into(crate::schema::users::dsl::users)
             .values(&new_user)
             .returning(User::as_returning())
             .get_result::<User>(&mut conn)
@@ -226,16 +230,36 @@ pub async fn register(
     .await
     .unwrap(); // JoinHandle< Result<User, diesel::Error> >
 
-
     match result {
-        Ok(user) => (StatusCode::CREATED, Json(user)).into_response(),
+        Ok(user) => {
+            let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+
+            let claims = Claims {
+                sub: user.id.to_string(),
+                username: Some(user.username.clone()),
+                exp: (Utc::now() + Duration::hours(24)).timestamp() as usize,
+            };
+
+            let token = encode(
+                &Header::default(),
+                &claims,
+                &EncodingKey::from_secret(jwt_secret.as_bytes()),
+            )
+            .unwrap();
+
+            let response = serde_json::json!({
+                "user": user,
+                "token": token,
+            });
+
+            (StatusCode::CREATED, Json(response)).into_response()
+        }
         Err(err) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Database error: {}", err),
         )
             .into_response(),
     }
-
 }
 
 // POST /login
