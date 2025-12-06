@@ -1,11 +1,11 @@
 mod middlewares;
-use crate::middlewares::logger::log_requests;
+use crate::middlewares::{auth::auth_middleware, logger::log_requests};
 use axum::{
     Router,
     extract::{Json, Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
 };
 use diesel::prelude::*;
 use dotenv::dotenv;
@@ -16,13 +16,19 @@ use uuid::Uuid;
 pub mod models;
 pub mod schema;
 
+use argon2::{Argon2, PasswordHasher};
+// use rand::rngs::OsRng;
+
 use tokio::task;
 
 use diesel::pg::PgConnection;
 use diesel::r2d2::ConnectionManager;
 use r2d2::Pool;
 
-use crate::models::{Book, NewBook, UpdateBook};
+use password_hash::SaltString;
+use password_hash::rand_core::OsRng;
+
+use crate::models::{Book, NewBook, NewUser, UpdateBook, User};
 use crate::schema::books::dsl::*;
 
 // Type alias for the DB pool
@@ -140,7 +146,6 @@ async fn update_book_by_id(
 }
 
 // DELETE /books/{id}
-// DELETE /books/{id}
 #[axum::debug_handler]
 async fn delete_book_by_id(
     State(pool): State<DbPool>,
@@ -178,6 +183,118 @@ async fn delete_book_by_id(
     }
 }
 
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct RegisterPayload {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+// POST /register
+pub async fn register(
+    State(pool): State<DbPool>,
+    Json(payload): Json<RegisterPayload>,
+) -> impl IntoResponse {
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let hashed_password = argon2
+        .hash_password(payload.password.as_bytes(), &salt)
+        .unwrap()
+        .to_string();
+
+    println!(" Username {}", payload.username);
+    println!(" Email: {}", payload.email);
+    println!("Password: {}", payload.password);
+    println!("Hashed Passwod: {}", hashed_password);
+
+    let new_user = NewUser {
+        username: payload.username,
+        email: payload.email,
+        password: hashed_password,
+    };
+
+    let result = task::spawn_blocking(move || {
+    let mut conn = pool.get().unwrap();
+
+    diesel::insert_into(crate::schema::users::dsl::users)
+            .values(&new_user)
+            .returning(User::as_returning())
+            .get_result::<User>(&mut conn)
+    })
+    .await
+    .unwrap(); // JoinHandle< Result<User, diesel::Error> >
+
+
+    match result {
+        Ok(user) => (StatusCode::CREATED, Json(user)).into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Database error: {}", err),
+        )
+            .into_response(),
+    }
+
+}
+
+// POST /login
+// pub async fn login(
+//     State(pool): State<DbPool>,
+//     Json(payload): Json<LoginPayload>,
+// ) -> impl IntoResponse {
+//     let user_result = tokio::task::spawn_blocking(move || {
+//         let mut conn = pool.get().unwrap();
+//         crate::schema::users::dsl::users
+//             .filter(crate::schema::users::dsl::email.eq(&payload.email))
+//             .first::<User>(&mut conn)
+//             .optional()
+//     })
+//     .await
+//     .unwrap();
+
+//     match user_result {
+//         Ok(Some(user)) => {
+//             if verify_encoded(&user.password, payload.password.as_bytes()).unwrap() {
+//                 let claims = Claims {
+//                     sub: user.id.to_string(),
+//                     exp: (Utc::now() + Duration::hours(24)).timestamp() as usize,
+//                 };
+//                 let token = encode(
+//                     &Header::default(),
+//                     &claims,
+//                     &EncodingKey::from_secret("secret".as_ref()),
+//                 )
+//                 .unwrap();
+//                 (StatusCode::OK, Json(serde_json::json!({ "token": token }))).into_response()
+//             } else {
+//                 (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response()
+//             }
+//         }
+//         Ok(None) => (StatusCode::NOT_FOUND, "User not found").into_response(),
+//         Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", err)).into_response(),
+//     }
+// }
+
+// for the protected routes added here:
+// let protected_books = Router::new()
+//     .route("/books", get(get_all_books).post(add_book))
+//     .route(
+//         "/books/{id}",
+//         get(get_book_by_id)
+//             .patch(update_book_by_id)
+//             .delete(delete_book_by_id),
+//     )
+//     .layer(axum::middleware::from_fn(auth_middleware));
+
+// let app = Router::new()
+//     .route("/", get(|| async { "Works" }))
+//     .route("/register", register)
+//     .route("/login", login)
+//     .merge(protected_books)
+//     .layer(axum::middleware::from_fn(log_requests))
+//     .with_state(pool);
+
 // main entry point for the function:
 #[tokio::main]
 async fn main() {
@@ -197,9 +314,7 @@ async fn main() {
         .build(manager)
         .expect("Failed to created Pool");
 
-    // defined the router for the routing
-    let app = Router::new()
-        .route("/", get(|| async { "Works" }))
+    let protected_books = Router::new()
         .route("/books", get(get_all_books).post(add_book))
         .route(
             "/books/{id}",
@@ -207,8 +322,15 @@ async fn main() {
                 .patch(update_book_by_id)
                 .delete(delete_book_by_id),
         )
+        .layer(axum::middleware::from_fn(auth_middleware));
+
+    // defined the router for the routing
+    let app = Router::new()
+        .route("/", get(|| async { "Works" }))
+        .route("/register", post(register))
+        // .route("/login", login)
+        .merge(protected_books)
         .layer(axum::middleware::from_fn(log_requests))
-        //@test working of this
         .with_state(pool);
 
     println!("Server running on http://localhost:3000");

@@ -28,7 +28,9 @@ pub struct UpdateBook {
 
 // USER TABLE:
 
-#[derive(Queryable, Serialize, Deserialize)]
+#[derive(Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name=crate::schema::users)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
     pub id: Uuid,
     pub username: String,
@@ -37,9 +39,18 @@ pub struct User {
     pub created_at: NaiveDateTime,
 }
 
-// #[derive(Insertable, Deserialize)]
-// #[diesel(table_name = users)]
-// pub struct NewUser {
-//     pub username: String,
-//     pub email: String,
-// }
+// Struct used for inserting a user
+#[derive(Insertable, Serialize, Deserialize)]
+#[diesel(table_name = crate::schema::users)]
+pub struct NewUser {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: String,
+    pub exp: usize,
+    pub username: Option<String>,
+}

@@ -10,3 +10,7 @@ Running migration 2025-12-05-112232-0000_create_books
 diesel generate <nme of  mgruiatrion>
 
 - add authentication & use of middleware forit
+- add ACCESS_TOKEN and REFRESH_TOKEN later here
+- resume auth & adding users here
+- add ACCESS_TOKEN, REFRESH_TOKEN and jwt (cookie managembt in frontend for it here)
+- happens after register here (when user is logging in then sva ethe tokens here)
