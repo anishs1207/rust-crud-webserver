@@ -25,3 +25,27 @@ diesel generate <nme of  mgruiatrion>
 "username": "steven"
 }
 }
+
+crednetuials:
+{
+"username": "steven",
+"email": "steven@example.com",
+"password": "strongpassword123"
+}
+
+{
+"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzNDYzYzM0OS1jOTI0LTRhZGQtOTFjZi0zM2MyODUzOGQ1MzgiLCJleHAiOjE3NjUxMDczOTEsInVzZXJuYW1lIjoic3RldmVuIn0.Gy_0uzTOZWXd2BpE1wP8Jc2Mz1t27dGhUfD7jbaRXaE",
+"user": {
+"created_at": "2025-12-06T11:22:54.865073",
+"email": "steven@example.com",
+"id": "3463c349-c924-4add-91cf-33c28538d538",
+"password": "$argon2id$v=19$m=19456,t=2,p=1$ixBXHobOqPSYpmiHkypS4A$ptrjJ8q8imcTVqV0hzEBDf/ZrUR6CagwMvKI4svzvX4",
+"username": "steven"
+}
+}
+
+# TODO:
+
+- add REFRESH TOKEN also (right now only an ACCESS TOKEN with limited ttl)
+- modularise into /routes and /controllers
+- todo add an api to call gemini & create a author name and book (some axios alternate to call additonal apis here)

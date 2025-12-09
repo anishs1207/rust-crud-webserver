@@ -11,19 +11,22 @@ use diesel::prelude::*;
 use dotenv::dotenv;
 use std::env;
 
+use reqwest::{Client, Error};
 use uuid::Uuid;
 
-pub mod models;
-pub mod schema;
+mod db;
 
 use argon2::{Argon2, PasswordHasher};
 // use rand::rngs::OsRng;
 
 use tokio::task;
 
-use crate::models::Claims;
+use argon2::PasswordVerifier;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
+use serde::{Deserialize, Serialize};
+
+use crate::db::models::Claims;
 
 use diesel::pg::PgConnection;
 use diesel::r2d2::ConnectionManager;
@@ -32,8 +35,8 @@ use r2d2::Pool;
 use password_hash::SaltString;
 use password_hash::rand_core::OsRng;
 
-use crate::models::{Book, NewBook, NewUser, UpdateBook, User};
-use crate::schema::books::dsl::*;
+use crate::db::models::{Book, NewBook, NewUser, UpdateBook, User};
+use crate::db::schema::books::dsl::*;
 
 // Type alias for the DB pool
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
@@ -187,8 +190,6 @@ async fn delete_book_by_id(
     }
 }
 
-use serde::Deserialize;
-
 #[derive(Debug, Deserialize)]
 pub struct RegisterPayload {
     pub username: String,
@@ -222,7 +223,7 @@ pub async fn register(
     let result = task::spawn_blocking(move || {
         let mut conn = pool.get().unwrap();
 
-        diesel::insert_into(crate::schema::users::dsl::users)
+        diesel::insert_into(crate::db::schema::users::dsl::users)
             .values(&new_user)
             .returning(User::as_returning())
             .get_result::<User>(&mut conn)
@@ -262,62 +263,155 @@ pub async fn register(
     }
 }
 
-// POST /login
-// pub async fn login(
-//     State(pool): State<DbPool>,
-//     Json(payload): Json<LoginPayload>,
-// ) -> impl IntoResponse {
-//     let user_result = tokio::task::spawn_blocking(move || {
-//         let mut conn = pool.get().unwrap();
-//         crate::schema::users::dsl::users
-//             .filter(crate::schema::users::dsl::email.eq(&payload.email))
-//             .first::<User>(&mut conn)
-//             .optional()
-//     })
-//     .await
-//     .unwrap();
+#[derive(Debug, Deserialize)]
+pub struct LoginPayload {
+    pub email: String,
+    pub password: String,
+}
 
-//     match user_result {
-//         Ok(Some(user)) => {
-//             if verify_encoded(&user.password, payload.password.as_bytes()).unwrap() {
-//                 let claims = Claims {
-//                     sub: user.id.to_string(),
-//                     exp: (Utc::now() + Duration::hours(24)).timestamp() as usize,
-//                 };
-//                 let token = encode(
-//                     &Header::default(),
-//                     &claims,
-//                     &EncodingKey::from_secret("secret".as_ref()),
-//                 )
-//                 .unwrap();
-//                 (StatusCode::OK, Json(serde_json::json!({ "token": token }))).into_response()
-//             } else {
-//                 (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response()
-//             }
-//         }
-//         Ok(None) => (StatusCode::NOT_FOUND, "User not found").into_response(),
-//         Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{}", err)).into_response(),
-//     }
-// }
+pub async fn login(
+    State(pool): State<DbPool>,
+    Json(payload): Json<LoginPayload>,
+) -> impl IntoResponse {
+    // Spawn blocking task to fetch user from DB
+    let user_result = task::spawn_blocking(move || {
+        let mut conn = pool.get().expect("Failed to get DB connection");
 
-// for the protected routes added here:
-// let protected_books = Router::new()
-//     .route("/books", get(get_all_books).post(add_book))
-//     .route(
-//         "/books/{id}",
-//         get(get_book_by_id)
-//             .patch(update_book_by_id)
-//             .delete(delete_book_by_id),
-//     )
-//     .layer(axum::middleware::from_fn(auth_middleware));
+        crate::db::schema::users::dsl::users
+            .filter(crate::db::schema::users::dsl::email.eq(&payload.email))
+            .first::<User>(&mut conn)
+            .optional() // return Ok(None) if not found
+    })
+    .await
+    .unwrap(); // unwrap JoinHandle
 
-// let app = Router::new()
-//     .route("/", get(|| async { "Works" }))
-//     .route("/register", register)
-//     .route("/login", login)
-//     .merge(protected_books)
-//     .layer(axum::middleware::from_fn(log_requests))
-//     .with_state(pool);
+    match user_result {
+        Ok(Some(user)) => {
+            // Verify password
+            let parsed_hash = argon2::PasswordHash::new(&user.password).unwrap();
+            if Argon2::default()
+                .verify_password(payload.password.as_bytes(), &parsed_hash)
+                .is_ok()
+            {
+                // Password correct → create JWT
+                let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+
+                let claims = Claims {
+                    sub: user.id.to_string(),
+                    username: Some(user.username.clone()),
+                    exp: (Utc::now() + Duration::hours(24)).timestamp() as usize,
+                };
+
+                let token = encode(
+                    &Header::default(),
+                    &claims,
+                    &EncodingKey::from_secret(jwt_secret.as_bytes()),
+                )
+                .unwrap();
+
+                let response = serde_json::json!({
+                    "user": user,
+                    "token": token,
+                });
+
+                (StatusCode::OK, Json(response)).into_response()
+            } else {
+                // Password incorrect
+                (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response()
+            }
+        }
+        Ok(None) => (StatusCode::NOT_FOUND, "User not found").into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("DB error: {}", err),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GeneratedBook {
+    pub book: String,
+    pub author: String,
+}
+// generate book name via gemini api key
+pub async fn generate_book() -> impl IntoResponse {
+    let api_key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set in .env");
+    
+    let client = Client::new();
+
+    let prompt = r#"
+    Generate a fictional book name and author.
+    Return ONLY valid JSON in the format:
+    {
+        "book": "Book Name",
+        "author": "Author Name"
+    }
+    No extra text, no explanation.
+    "#;
+
+    let body = serde_json::json!({
+        "contents": [
+            {
+                "parts": [
+                    { "text": prompt }
+                ]
+            }
+        ]
+    });
+
+    let response = client
+        .post(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        )
+        .query(&[("key", api_key)])
+        .json(&body)
+        .send()
+        .await;
+
+    println!("{:?}", response);
+
+    if let Err(err) = response {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Gemini request failed: {}", err),
+        )
+            .into_response();
+    }
+
+    let response = response.unwrap().json::<serde_json::Value>().await;
+
+    if let Err(err) = response {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Gemini JSON parse failed: {}", err),
+        )
+            .into_response();
+    }
+
+    let response = response.unwrap();
+
+    // Extract the model output text
+    let text_output = response["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    // Parse AI-generated JSON
+    let parsed: Result<GeneratedBook, _> = serde_json::from_str(&text_output);
+
+    match parsed {
+        Ok(data) => (StatusCode::OK, Json(data)).into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Invalid JSON from Gemini: {}\nRaw Output: {}",
+                err, text_output
+            ),
+        )
+            .into_response(),
+    }
+}
 
 // main entry point for the function:
 #[tokio::main]
@@ -340,6 +434,7 @@ async fn main() {
 
     let protected_books = Router::new()
         .route("/books", get(get_all_books).post(add_book))
+        // .route("/generate-book", post(generate_book))
         .route(
             "/books/{id}",
             get(get_book_by_id)
@@ -352,7 +447,8 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { "Works" }))
         .route("/register", post(register))
-        // .route("/login", login)
+        .route("/login", post(login))
+        .route("/generate-book", post(generate_book))
         .merge(protected_books)
         .layer(axum::middleware::from_fn(log_requests))
         .with_state(pool);
