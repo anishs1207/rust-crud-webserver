@@ -1,51 +1,60 @@
-# This is simple Rust CRUD Backend using Axum:
+# Rust Backend Web Server:
 
-- https://docs.rs/axum/latest/axum/
-- refer this palylsit for learning rust more in depth here:
-  https://www.youtube.com/playlist?list=PLDbRgZ0OOEpUkWDGqp91ODn0dk7LPBAUL
+- Using Axum for the server and diesel for ORM
 
-anish@LAPTOP-Q65T0SCJ:/mnt/c/Users/Anish/Documents/Anish-Coding/coding_notes/building/31-rust-backend/rust-backend$ diesel migration run
-Running migration 2025-12-05-112232-0000_create_books
+## Setup:
 
-diesel generate <nme of  mgruiatrion>
+### 1. Install Rust:
 
-- add authentication & use of middleware forit
-- add ACCESS_TOKEN and REFRESH_TOKEN later here
-- resume auth & adding users here
-- add ACCESS_TOKEN, REFRESH_TOKEN and jwt (cookie managembt in frontend for it here)
-- happens after register here (when user is logging in then sva ethe tokens here)
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
 
-{
-"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzNDYzYzM0OS1jOTI0LTRhZGQtOTFjZi0zM2MyODUzOGQ1MzgiLCJleHAiOjE3NjUxMDY1NzUsInVzZXJuYW1lIjoic3RldmVuIn0.Yzv3F48Mvy9Y9YlAK-LxQLKt2JECTR9jmrBi5LrUtF4",
-"user": {
-"created_at": "2025-12-06T11:22:54.865073",
-"email": "steven@example.com",
-"id": "3463c349-c924-4add-91cf-33c28538d538",
-"password": "$argon2id$v=19$m=19456,t=2,p=1$ixBXHobOqPSYpmiHkypS4A$ptrjJ8q8imcTVqV0hzEBDf/ZrUR6CagwMvKI4svzvX4",
-"username": "steven"
-}
-}
+### 2. Install Diesel CLI (Postgres)
 
-crednetuials:
-{
-"username": "steven",
-"email": "steven@example.com",
-"password": "strongpassword123"
-}
+```bash
+cargo install diesel_cli --no-default-features --features postgres
+```
 
-{
-"token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzNDYzYzM0OS1jOTI0LTRhZGQtOTFjZi0zM2MyODUzOGQ1MzgiLCJleHAiOjE3NjUxMDczOTEsInVzZXJuYW1lIjoic3RldmVuIn0.Gy_0uzTOZWXd2BpE1wP8Jc2Mz1t27dGhUfD7jbaRXaE",
-"user": {
-"created_at": "2025-12-06T11:22:54.865073",
-"email": "steven@example.com",
-"id": "3463c349-c924-4add-91cf-33c28538d538",
-"password": "$argon2id$v=19$m=19456,t=2,p=1$ixBXHobOqPSYpmiHkypS4A$ptrjJ8q8imcTVqV0hzEBDf/ZrUR6CagwMvKI4svzvX4",
-"username": "steven"
-}
-}
+### 3. Create a .env file & Copy template:
 
-# TODO:
+```bash
+cp .env.sample .env
+```
 
-- add REFRESH TOKEN also (right now only an ACCESS TOKEN with limited ttl)
-- modularise into /routes and /controllers
-- todo add an api to call gemini & create a author name and book (some axios alternate to call additonal apis here)
+### 4. Diesel Setup & Create migrations:
+
+```bash
+diesel setup
+diesel migration generate create_users
+diesel migration run # Run Migrations
+```
+
+### 5. Run the Server:
+
+```bash
+cd src
+cargo run # Runs the webserver at http://localhost:3000
+```
+
+## Project Structure
+
+```txt
+├── .github/              # GitHub workflows & configs
+├── migrations/           # Diesel database migrations
+├── src/
+│   ├── controllers/      # Request handlers / business logic
+│   ├── db/               # Database connection & schema
+│   ├── middlewares/      # Custom middlewares
+│   ├── routes/           # Route definitions
+│   └── main.rs           # Application entry point
+├── tests/                # Integration & unit tests
+├── .env                  # Environment variables
+├── .env.sample           # Sample env config
+├── Cargo.toml            # Dependencies & project metadata
+├── Cargo.lock
+├── diesel.toml           # Diesel configuration
+├── Dockerfile
+├── README.md
+└── NOTES.md
+```
